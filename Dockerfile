@@ -5,10 +5,10 @@ ARG COMPOSER_FLAGS
 WORKDIR /var/www
 
 COPY . /var/www
-COPY php.ini /usr/local/etc/php/php.ini
-COPY www.conf /usr/local/etc/php-fpm.d/www.conf
 
 RUN composer install $COMPOSER_FLAGS \
+    && mv php.ini /usr/local/etc/php/php.ini \
+    && mv www.conf /usr/local/etc/php-fpm.d/www.conf \
     && chown -R 0:www-data /var/www \
     && find /var/www -type f -exec chmod 664 {} \; \
     && find /var/www -type d -exec chmod 775 {} \; \
