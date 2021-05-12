@@ -1,0 +1,70 @@
+version: '3.6'
+services:
+  nginx:
+    image: nginx:1.19-alpine
+    container_name: laravel-base-nginx
+    restart: always
+    volumes:
+    - ./public:/var/www/public
+    - ./nginx.conf:/etc/nginx/nginx.conf
+    ports:
+    - 80:80
+    depends_on:
+    - app
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  app:
+    build:
+      context: .
+      args:
+      - COMPOSER_FLAGS=--prefer-dist --optimize-autoloader
+    command: /usr/local/sbin/php-fpm
+    container_name: laravel-base-app
+    restart: always
+    ports:
+    - 9000:9000
+    healthcheck:
+      test: curl -sS http://127.0.0.1:9000 || exit 1
+      interval: 1s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    environment:
+    - IS_BATCH_DAEMON_RUNNING=true
+    - OPCACHE_SAVE_COMMENTS=1
+    - OPCACHE_VALIDATE_TIMESTAMPS=1
+    - OPCACHE_REVALIDATE_FREQ=0
+    volumes:
+    - .:/var/www
+    - ./php.ini:/usr/local/etc/php/php.ini
+    - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    depends_on:
+    - mysql
+    - redis
+
+  mysql:
+    image: mysql:8.0.24
+    container_name: laravel-base-db
+    restart: always
+    volumes:
+    - mysql-data:/var/lib/mysql
+    ports:
+    - 3306:3306
+    environment:
+    - MYSQL_ROOT_PASSWORD=laravel-base
+    - MYSQL_DATABASE=laravel-base
+    - MYSQL_USER=laravel-base
+    - MYSQL_PASSWORD=laravel-base
+
+  redis:
+    image: redis:6.2-alpine
+    container_name: laravel-base-redis
+    restart: always
+    ports:
+    - 6379:6379
+    volumes:
+    - redis-data:/data
+
+volumes:
+  redis-data:
+  mysql-data:
