@@ -1,0 +1,135 @@
+version: '3.6'
+services:
+  nginx:
+    image: nginx:1.17-alpine
+    container_name: laravel-base-nginx
+    restart: always
+    volumes:
+      - ./public:/var/www/public
+      - ./nginx.production.conf:/etc/nginx/nginx.conf
+      - ./volumes/certbot/conf:/etc/letsencrypt
+      - ./volumes/certbot/www:/var/www/certbot
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      - app
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  certbot:
+    image: certbot/certbot
+    container_name: laravel-base-certbot
+    restart: always
+    volumes:
+      - ./volumes/certbot/conf:/etc/letsencrypt
+      - ./volumes/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  app:
+    image: ibrunotome/laravel-base:${SHORT_SHA:-latest}
+    container_name: laravel-base-app
+    restart: always
+    command:
+      - /bin/bash
+      - -c
+      - |
+        php artisan migrate --force
+        php artisan optimize:clear
+        php artisan optimize
+        php artisan view:cache
+        /usr/local/sbin/php-fpm
+    ports:
+      - 9000:9000
+    healthcheck:
+      test: curl -sS http://127.0.0.1:9000 || exit 1
+      interval: 1s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    environment:
+      - APP_ENV=production
+      - OPCACHE_SAVE_COMMENTS=1
+      - OPCACHE_VALIDATE_TIMESTAMPS=0
+      - OPCACHE_REVALIDATE_FREQ=0
+    volumes:
+      - ./.env:/var/www/.env
+      - ./public:/var/www/public
+    depends_on:
+      - redis
+
+  schedule:
+    image: ibrunotome/laravel-base:${SHORT_SHA:-latest}
+    container_name: laravel-base-schedule
+    restart: always
+    command:
+      - /bin/bash
+      - -c
+      - |
+        chmod +x schedule.sh
+        /var/www/schedule.sh
+    environment:
+      - APP_ENV=production
+      - OPCACHE_SAVE_COMMENTS=0
+      - OPCACHE_VALIDATE_TIMESTAMPS=0
+      - OPCACHE_REVALIDATE_FREQ=0
+    volumes:
+      - ./.env:/var/www/.env
+    depends_on:
+      - redis
+
+  queue:
+    image: ibrunotome/laravel-base:${SHORT_SHA:-latest}
+    container_name: laravel-base-queue
+    restart: always
+    command:
+      - /bin/bash
+      - -c
+      - |
+        php artisan config:cache
+        php artisan horizon --quiet
+    environment:
+      - APP_ENV=production
+      - OPCACHE_SAVE_COMMENTS=0
+      - OPCACHE_VALIDATE_TIMESTAMPS=0
+      - OPCACHE_REVALIDATE_FREQ=0
+    volumes:
+      - ./.env:/var/www/.env
+    depends_on:
+      - redis
+
+  mariadb:
+    image: mariadb:10.5
+    container_name: laravel-base-db
+    restart: always
+    volumes:
+      - ./volumes/mysql:/var/lib/mysql
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=laravel-base
+      - MYSQL_DATABASE=laravel-base
+      - MYSQL_USER=laravel-base
+      - MYSQL_PASSWORD=laravel-base
+
+  redis:
+    image: redis:5.0.5-alpine
+    container_name: laravel-base-redis
+    restart: always
+    ports:
+      - 6379:6379
+    volumes:
+      - ./volumes/redis:/data
+
+  websockets:
+    image: oanhnn/laravel-echo-server:v2.0.0
+    container_name: laravel-base-websockets
+    restart: always
+    depends_on:
+      - redis
+    environment:
+      LARAVEL_ECHO_SERVER_AUTH_HOST: laravelbase.com.br
+      REDIS_HOST:                    redis
+      REDIS_PORT:                    6379
+      REDIS_DB_BACKEND:              0
+    ports:
+      - 6001:6001
